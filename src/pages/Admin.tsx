@@ -22,7 +22,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   X,
-  Monitor
+  Monitor,
+  Upload
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -88,6 +89,41 @@ const ConfirmModal: React.FC<{
     </motion.div>
   </motion.div>
 );
+
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
 
 const ProductForm: React.FC<{ 
   product: Product | null, 
@@ -171,16 +207,80 @@ const ProductForm: React.FC<{
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-widest px-1">Đường dẫn ảnh</label>
-                <input 
-                  required
-                  type="text" 
-                  value={formData.image}
-                  onChange={(e) => setFormData({...formData, image: e.target.value})}
-                  className="w-full p-4 bg-neutral-50 border border-transparent rounded-xl focus:bg-white focus:border-black outline-none transition-all"
-                  placeholder="https://images.unsplash.com/..."
-                />
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-widest px-1 block">Hình ảnh sản phẩm</label>
+                
+                {formData.image ? (
+                  <div className="relative group rounded-xl overflow-hidden border border-neutral-200 bg-neutral-50 h-44 flex items-center justify-center">
+                    <img src={formData.image} className="max-h-full max-w-full object-contain" alt="Preview" />
+                    <button 
+                      type="button"
+                      onClick={() => setFormData({...formData, image: ''})}
+                      className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-full transition-all opacity-100 md:opacity-0 group-hover:opacity-100"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) {
+                        try {
+                          const reader = new FileReader();
+                          reader.onloadend = async () => {
+                            const result = reader.result as string;
+                            const compressed = await compressImage(result);
+                            setFormData({...formData, image: compressed});
+                          };
+                          reader.readAsDataURL(file);
+                        } catch (err) {
+                          console.error("Lỗi đọc file:", err);
+                        }
+                      }
+                    }}
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) {
+                          try {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const result = reader.result as string;
+                              const compressed = await compressImage(result);
+                              setFormData({...formData, image: compressed});
+                            };
+                            reader.readAsDataURL(file);
+                          } catch (err) {
+                            console.error("Lỗi đọc file:", err);
+                          }
+                        }
+                      };
+                      input.click();
+                    }}
+                    className="border-2 border-dashed border-neutral-300 hover:border-black rounded-xl p-6 text-center cursor-pointer hover:bg-neutral-50 transition-all flex flex-col items-center justify-center gap-2 h-44"
+                  >
+                    <Upload size={32} className="text-neutral-400 animate-pulse" />
+                    <div className="text-sm font-medium text-neutral-600">Kéo & thả ảnh vào đây, hoặc click để chọn ảnh</div>
+                    <div className="text-[10px] text-neutral-400">Chọn ảnh trực tiếp để lưu vào Cơ sở dữ liệu</div>
+                  </div>
+                )}
+                
+                <details className="text-[10px] uppercase font-bold text-neutral-400 tracking-widest px-1 cursor-pointer">
+                  <summary className="hover:text-black">Hoặc nhập URL hình ảnh thủ công</summary>
+                  <input 
+                    type="text" 
+                    value={formData.image || ''}
+                    onChange={(e) => setFormData({...formData, image: e.target.value})}
+                    className="w-full mt-2 p-3 bg-neutral-50 border border-neutral-200 rounded-lg outline-none text-xs"
+                    placeholder="https://images.unsplash.com/..."
+                  />
+                </details>
               </div>
             </div>
 
