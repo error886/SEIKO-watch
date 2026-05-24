@@ -1,22 +1,38 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, SlidersHorizontal, ShoppingCart, ChevronDown, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { products, Product } from '../data/products';
+import { products as fallbackProducts, Product } from '../data/products';
 import { useCart } from '../context/CartContext';
+import { dbGetProducts } from '../lib/db';
 
 const Shop: React.FC = () => {
   const { addToCart } = useCart();
+  const [products, setProducts] = useState<Product[]>(fallbackProducts);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSeries, setSelectedSeries] = useState<string>('Tất cả');
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 200000000]);
   const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc'>('default');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    const fetchProds = async () => {
+      try {
+        const list = await dbGetProducts();
+        if (list && list.length > 0) {
+          setProducts(list);
+        }
+      } catch (err) {
+        console.error("Error fetching shop products:", err);
+      }
+    };
+    fetchProds();
+  }, []);
+
   const seriesOptions = useMemo(() => {
     const seriesSet = new Set(products.map(p => p.series));
     return ['Tất cả', ...Array.from(seriesSet)];
-  }, []);
+  }, [products]);
 
   const filteredProducts = useMemo(() => {
     let result = products.filter((product) => {
@@ -36,7 +52,7 @@ const Shop: React.FC = () => {
     }
 
     return result;
-  }, [searchQuery, selectedSeries, priceRange, sortBy]);
+  }, [products, searchQuery, selectedSeries, priceRange, sortBy]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);

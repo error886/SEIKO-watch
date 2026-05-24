@@ -3,23 +3,71 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { CheckCircle, ArrowRight, CreditCard, Truck, User, Shield } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { dbSaveOrder } from '../lib/db';
 
 const Checkout: React.FC = () => {
   const { cart, cartTotal, clearCart } = useCart();
   const navigate = useNavigate();
   const [isOrdered, setIsOrdered] = useState(false);
+  const [isPlacing, setIsPlacing] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState('');
+
+  const [formData, setFormData] = useState({
+    customerName: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    district: '',
+    paymentMethod: 'COD'
+  });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
 
-  const handlePlaceOrder = (e: React.FormEvent) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsOrdered(true);
-    setTimeout(() => {
-      clearCart();
-      navigate('/');
-    }, 4000);
+    if (cart.length === 0) return;
+    setIsPlacing(true);
+    try {
+      const items = cart.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image
+      }));
+      
+      const order = await dbSaveOrder({
+        customerName: formData.customerName,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        district: formData.district,
+        paymentMethod: formData.paymentMethod,
+        items,
+        total: cartTotal
+      });
+
+      setPlacedOrderId(order.id);
+      setIsOrdered(true);
+      setTimeout(() => {
+        clearCart();
+        navigate('/');
+      }, 5000);
+    } catch (err) {
+      console.error("Error saving dynamic order:", err);
+      alert("Đặt hàng thất bại. Vui lòng thử lại!");
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   if (isOrdered) {
@@ -35,13 +83,13 @@ const Checkout: React.FC = () => {
           </div>
           <h2 className="text-3xl font-light uppercase tracking-tight mb-4">Đặt hàng thành công!</h2>
           <p className="text-neutral-500 mb-10">
-            Cảm ơn bạn đã tin tưởng Seiko. Mã đơn hàng của bạn là <b>#SK2026-992</b>. Chúng tôi sẽ sớm liên hệ để xác nhận đơn hàng.
+            Cảm ơn bạn đã tin tưởng Seiko. Mã đơn hàng của bạn là <b>{placedOrderId}</b>. Chúng tôi sẽ sớm liên hệ để xác nhận đơn hàng.
           </p>
           <div className="h-1 w-full bg-neutral-100 rounded-full overflow-hidden">
             <motion.div 
               initial={{ width: "0%" }}
               animate={{ width: "100%" }}
-              transition={{ duration: 4 }}
+              transition={{ duration: 5 }}
               className="h-full bg-black"
             />
           </div>
@@ -68,9 +116,9 @@ const Checkout: React.FC = () => {
                    <User size={16} /> <span>Thông tin khách hàng</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input required type="text" placeholder="Họ và tên" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
-                  <input required type="email" placeholder="Email" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
-                  <input required type="tel" placeholder="Số điện thoại" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors md:col-span-2" />
+                  <input required name="customerName" value={formData.customerName} onChange={handleChange} type="text" placeholder="Họ và tên" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
+                  <input required name="email" value={formData.email} onChange={handleChange} type="email" placeholder="Email" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
+                  <input required name="phone" value={formData.phone} onChange={handleChange} type="tel" placeholder="Số điện thoại" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors md:col-span-2" />
                 </div>
               </section>
 
@@ -79,10 +127,10 @@ const Checkout: React.FC = () => {
                    <Truck size={16} /> <span>Địa chỉ giao hàng</span>
                 </div>
                 <div className="grid grid-cols-1 gap-4">
-                  <input required type="text" placeholder="Địa chỉ (Số nhà, đường...)" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
+                  <input required name="address" value={formData.address} onChange={handleChange} type="text" placeholder="Địa chỉ (Số nhà, đường...)" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
                   <div className="grid grid-cols-2 gap-4">
-                    <input required type="text" placeholder="Thành phố" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
-                    <input required type="text" placeholder="Quận/Huyện" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
+                    <input required name="city" value={formData.city} onChange={handleChange} type="text" placeholder="Thành phố" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
+                    <input required name="district" value={formData.district} onChange={handleChange} type="text" placeholder="Quận/Huyện" className="p-4 bg-white border border-neutral-200 rounded focus:border-black outline-none text-sm transition-colors" />
                   </div>
                 </div>
               </section>
@@ -93,11 +141,11 @@ const Checkout: React.FC = () => {
                 </div>
                 <div className="space-y-4">
                   <label className="flex items-center p-4 bg-white border border-neutral-200 rounded cursor-pointer hover:border-black transition-colors">
-                    <input type="radio" name="payment" defaultChecked className="mr-4 accent-black" />
+                    <input type="radio" name="paymentMethod" value="COD" checked={formData.paymentMethod === 'COD'} onChange={(e) => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))} className="mr-4 accent-black" />
                     <span className="text-sm">Thanh toán khi nhận hàng (COD)</span>
                   </label>
                   <label className="flex items-center p-4 bg-white border border-neutral-200 rounded cursor-pointer hover:border-black transition-colors">
-                    <input type="radio" name="payment" className="mr-4 accent-black" />
+                    <input type="radio" name="paymentMethod" value="Bank" checked={formData.paymentMethod === 'Bank'} onChange={(e) => setFormData(prev => ({ ...prev, paymentMethod: e.target.value }))} className="mr-4 accent-black" />
                     <span className="text-sm">Chuyển khoản ngân hàng</span>
                   </label>
                 </div>
@@ -105,9 +153,10 @@ const Checkout: React.FC = () => {
 
               <button 
                 type="submit"
-                className="w-full bg-neutral-900 text-white py-5 rounded font-bold uppercase tracking-[0.3em] hover:bg-neutral-800 transition-all flex items-center justify-center gap-3"
+                disabled={isPlacing}
+                className="w-full bg-neutral-900 text-white py-5 rounded font-bold uppercase tracking-[0.3em] hover:bg-neutral-800 transition-all flex items-center justify-center gap-3 disabled:bg-neutral-400"
               >
-                Hoàn tất đặt hàng
+                {isPlacing ? 'Đang xử lý...' : 'Hoàn tất đặt hàng'}
                 <ArrowRight size={20} />
               </button>
             </form>

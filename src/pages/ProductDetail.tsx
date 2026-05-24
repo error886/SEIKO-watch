@@ -1,15 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingCart, ArrowLeft, Shield, Clock, RotateCcw } from 'lucide-react';
-import { products } from '../data/products';
+import { products as fallbackProducts, Product } from '../data/products';
 import { useCart } from '../context/CartContext';
+import { dbGetProducts } from '../lib/db';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { addToCart } = useCart();
-  const product = products.find((p) => p.id === Number(id));
-  const [activeImage, setActiveImage] = useState(product?.image || '');
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeImage, setActiveImage] = useState('');
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const list = await dbGetProducts();
+        const activeList = list.length > 0 ? list : fallbackProducts;
+        const found = activeList.find((p) => String(p.id) === String(id));
+        if (found) {
+          setProduct(found);
+          setActiveImage(found.image);
+        }
+      } catch (err) {
+        console.error("Error fetching product detail:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProduct();
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-neutral-500 text-xs uppercase tracking-widest font-mono">Đang tải thông tin sản phẩm...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!product) {
     return (

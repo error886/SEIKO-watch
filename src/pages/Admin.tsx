@@ -293,14 +293,34 @@ const SidebarNav: React.FC<{ activeTab: AdminTab, setActiveTab: (tab: AdminTab) 
   </>
 );
 
+import { 
+  dbGetProducts, 
+  dbAddProduct, 
+  dbUpdateProduct, 
+  dbDeleteProduct, 
+  dbGetOrders, 
+  dbUpdateOrderStatus, 
+  dbGetBanners, 
+  dbAddBanner, 
+  dbDeleteBanner,
+  Order,
+  Banner
+} from '../lib/db';
+
 const Admin: React.FC = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [banners, setBanners] = useState<Banner[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isBannerFormOpen, setIsBannerFormOpen] = useState(false);
+  const [bannerForm, setBannerForm] = useState({ title: '', subtitle: '', image: '', isActive: true });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: number | string, type: 'product' | 'banner', title: string } | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   // Home Page Config State
   const [hpConfig, setHpConfig] = useState({
@@ -309,6 +329,28 @@ const Admin: React.FC = () => {
     showFeaturedOnly: false
   });
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  const loadAllData = async () => {
+    setIsLoading(true);
+    try {
+      const dbProds = await dbGetProducts();
+      setProducts(dbProds);
+
+      const dbOrds = await dbGetOrders();
+      setOrders(dbOrds);
+
+      const dbBans = await dbGetBanners();
+      setBanners(dbBans);
+    } catch (error) {
+      console.error("Error loading admin dashboard stats:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllData();
+  }, []);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -341,15 +383,16 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleSaveProduct = (product: Product) => {
-    if (editingProduct) {
-      setProducts(products.map(p => p.id === editingProduct.id ? { ...product, id: p.id } : p));
-    } else {
-      const newProduct = {
-        ...product,
-        id: Math.max(0, ...products.map(p => p.id)) + 1
-      };
-      setProducts([...products, newProduct]);
+  const handleSaveProduct = async (product: Product) => {
+    try {
+      if (editingProduct) {
+        await dbUpdateProduct(editingProduct.id, { ...product, id: editingProduct.id });
+      } else {
+        await dbAddProduct(product);
+      }
+      await loadAllData();
+    } catch (err) {
+      console.error("Error saving product:", err);
     }
     setIsFormOpen(false);
     setEditingProduct(null);
@@ -362,14 +405,39 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleConfirmDelete = () => {
+  const handleDeleteBanner = (id: string, title: string) => {
+    setConfirmDelete({ id, type: 'banner', title });
+  };
+
+  const handleCreateBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await dbAddBanner({
+        title: bannerForm.title,
+        subtitle: bannerForm.subtitle,
+        image: bannerForm.image,
+        isActive: bannerForm.isActive
+      });
+      setBannerForm({ title: '', subtitle: '', image: '', isActive: true });
+      setIsBannerFormOpen(false);
+      await loadAllData();
+    } catch (err) {
+      console.error("Error creating banner:", err);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
     if (!confirmDelete) return;
 
-    if (confirmDelete.type === 'product') {
-      setProducts(products.filter(p => p.id !== confirmDelete.id));
-    } else if (confirmDelete.type === 'banner') {
-      // Logic for deleting banner would go here
-      console.log('Banner deleted:', confirmDelete.id);
+    try {
+      if (confirmDelete.type === 'product') {
+        await dbDeleteProduct(Number(confirmDelete.id));
+      } else if (confirmDelete.type === 'banner') {
+        await dbDeleteBanner(String(confirmDelete.id));
+      }
+      await loadAllData();
+    } catch (err) {
+      console.error("Error confirming delete:", err);
     }
 
     setConfirmDelete(null);
@@ -385,6 +453,39 @@ const Admin: React.FC = () => {
     setIsFormOpen(true);
   };
   
+  // Dynamic statistics calculated directly from the dynamic Firestore orders database
+  const dynamicRevenueSum = useMemo(() => {
+    return orders
+      .filter(o => o.status !== 'cancelled')
+      .reduce((sum, o) => sum + o.total, 0);
+  }, [orders]);
+
+  const dynamicOrdersCount = useMemo(() => {
+    return orders.length;
+  }, [orders]);
+
+  const orderStats = useMemo(() => {
+    return [
+      { label: 'Tổng doanh thu', value: formatCurrency(dynamicRevenueSum), icon: <DollarSign />, trend: '+14.5%', isUp: true },
+      { label: 'Đơn hàng mới', value: String(dynamicOrdersCount), icon: <ShoppingBag />, trend: '+8.2%', isUp: true },
+      { label: 'Khách hàng', value: '1.240', icon: <Users />, trend: '-2.4%', isUp: false },
+      { label: 'Tỉ lệ chuyển đổi', value: '3.2%', icon: <TrendingUp />, trend: '+0.8%', isUp: true },
+    ];
+  }, [dynamicRevenueSum, dynamicOrdersCount]);
+
+  const recentOrders = useMemo(() => {
+    return orders.slice(0, 4).map(o => ({
+      id: o.id,
+      customer: o.customerName,
+      status: o.status === 'completed' ? 'Hoàn thành' :
+              o.status === 'processing' ? 'Đang xử lý' :
+              o.status === 'shipping' ? 'Đang giao' :
+              o.status === 'cancelled' ? 'Đã hủy' : 'Chờ xử lý',
+      amount: formatCurrency(o.total),
+      date: new Date(o.createdAt).toLocaleDateString('vi-VN')
+    }));
+  }, [orders]);
+
   // Mock Data for Charts
   const revenueData = [
     { day: 'Thứ 2', revenue: 45000000 },
@@ -405,23 +506,10 @@ const Admin: React.FC = () => {
 
   const COLORS = ['#000000', '#404040', '#737373', '#a3a3a3'];
 
-  const orderStats = [
-    { label: 'Tổng doanh thu', value: '405.000.000₫', icon: <DollarSign />, trend: '+12.5%', isUp: true },
-    { label: 'Đơn hàng mới', value: '48', icon: <ShoppingBag />, trend: '+5.2%', isUp: true },
-    { label: 'Khách hàng', value: '1.240', icon: <Users />, trend: '-2.4%', isUp: false },
-    { label: 'Tỉ lệ chuyển đổi', value: '3.2%', icon: <TrendingUp />, trend: '+0.8%', isUp: true },
-  ];
-
-  const recentOrders = [
-    { id: '#SK2026-992', customer: 'Nguyễn Văn A', status: 'Hoàn thành', amount: '15.500.000₫', date: '29/04/2026' },
-    { id: '#SK2026-991', customer: 'Trần Thị B', status: 'Đang xử lý', amount: '12.800.000₫', date: '29/04/2026' },
-    { id: '#SK2026-990', customer: 'Lê Văn C', status: 'Đang giao', amount: '18.200.000₫', date: '28/04/2026' },
-    { id: '#SK2026-989', customer: 'Phạm Văn D', status: 'Đã hủy', amount: '7.500.000₫', date: '28/04/2026' },
-  ];
-
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   };
+
 
   return (
     <div className="flex min-h-screen bg-[#FBFDFD] relative">
@@ -741,35 +829,56 @@ const Admin: React.FC = () => {
 
         {activeTab === 'banners' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-xl border border-neutral-100 shadow-sm overflow-hidden group">
-              <div className="aspect-[21/9] bg-neutral-100 relative">
-                <img src="https://images.unsplash.com/photo-1547996160-81dfa63595aa?auto=format&fit=crop&q=80&w=1200" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                   <button className="p-3 bg-white rounded-full hover:bg-neutral-100"><Edit size={20} /></button>
-                   <button 
-                    onClick={() => setConfirmDelete({ id: 'hero-1', type: 'banner', title: 'Main Hero Banner' })}
-                    className="p-3 bg-white rounded-full text-red-500 hover:bg-red-50"
-                   >
-                    <Trash2 size={20} />
-                   </button>
+            {banners.map((banner) => (
+              <div key={banner.id} className="bg-white rounded-xl border border-neutral-100 shadow-sm overflow-hidden group">
+                <div className="aspect-[21/9] bg-neutral-100 relative">
+                  <img src={banner.image} className="w-full h-full object-cover" alt={banner.title} />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                     <button 
+                      onClick={() => handleDeleteBanner(banner.id, banner.title)}
+                      className="p-3 bg-white rounded-full text-red-500 hover:bg-red-50"
+                     >
+                      <Trash2 size={20} />
+                     </button>
+                  </div>
+                </div>
+                <div className="p-6 flex justify-between items-center">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-tight">{banner.title}</h4>
+                    <p className="text-[10px] text-neutral-400 font-mono">{banner.subtitle || 'Active Promo'}</p>
+                  </div>
+                  <div className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${banner.isActive ? 'bg-green-50 text-green-600' : 'bg-neutral-50 text-neutral-400'}`}>
+                    {banner.isActive ? 'Đang hiển thị' : 'Tạm ẩn'}
+                  </div>
                 </div>
               </div>
-              <div className="p-6 flex justify-between items-center">
-                <div>
-                  <h4 className="text-sm font-bold uppercase tracking-tight">Main Hero Banner</h4>
-                  <p className="text-[10px] text-neutral-400 font-mono">2048 x 800 px</p>
-                </div>
-                <div className="px-2 py-1 bg-green-50 text-green-600 text-[10px] font-bold uppercase rounded">Đang hiển thị</div>
-              </div>
-            </div>
+            ))}
 
-            <div className="bg-white rounded-xl border border-dashed border-neutral-200 flex flex-col items-center justify-center p-12 text-center group cursor-pointer hover:border-black transition-colors">
-              <div className="w-16 h-16 rounded-full bg-neutral-50 flex items-center justify-center mb-4 group-hover:bg-black group-hover:text-white transition-all">
-                <Plus size={32} />
+            {isBannerFormOpen ? (
+              <form onSubmit={handleCreateBanner} className="bg-white rounded-xl border border-neutral-100 shadow-sm p-8 space-y-4">
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-4">Mẫu Tải Thêm Banner</h4>
+                <div className="space-y-3">
+                  <input required placeholder="Tiêu đề Banner" value={bannerForm.title} onChange={(e) => setBannerForm({...bannerForm, title: e.target.value})} className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded text-xs outline-none" />
+                  <input placeholder="Phụ đề (Subtitle)" value={bannerForm.subtitle} onChange={(e) => setBannerForm({...bannerForm, subtitle: e.target.value})} className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded text-xs outline-none" />
+                  <input required placeholder="Đường dẫn ảnh (URL)" value={bannerForm.image} onChange={(e) => setBannerForm({...bannerForm, image: e.target.value})} className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded text-xs outline-none" />
+                </div>
+                <div className="flex gap-4 pt-3">
+                  <button type="submit" className="flex-1 bg-black text-white py-3 rounded text-[10px] font-bold uppercase tracking-widest hover:bg-neutral-800">Tạo</button>
+                  <button type="button" onClick={() => setIsBannerFormOpen(false)} className="flex-1 bg-white text-black py-3 rounded text-[10px] border border-neutral-200 font-bold uppercase tracking-widest hover:border-black">Hủy</button>
+                </div>
+              </form>
+            ) : (
+              <div 
+                onClick={() => setIsBannerFormOpen(true)}
+                className="bg-white rounded-xl border border-dashed border-neutral-200 flex flex-col items-center justify-center p-12 text-center group cursor-pointer hover:border-black transition-colors"
+              >
+                <div className="w-16 h-16 rounded-full bg-neutral-50 flex items-center justify-center mb-4 group-hover:bg-black group-hover:text-white transition-all">
+                  <Plus size={32} />
+                </div>
+                <h4 className="text-sm font-bold uppercase tracking-widest mb-1">Thêm Banner Mới</h4>
+                <p className="text-xs text-neutral-400">Định dạng JPG, PNG hoặc WebP. Max 5MB.</p>
               </div>
-              <h4 className="text-sm font-bold uppercase tracking-widest mb-1">Thêm Banner Mới</h4>
-              <p className="text-xs text-neutral-400">Định dạng JPG, PNG hoặc WebP. Max 5MB.</p>
-            </div>
+            )}
           </div>
         )}
 
@@ -831,13 +940,88 @@ const Admin: React.FC = () => {
           </div>
         )}
 
-        {(activeTab === 'orders' || activeTab === 'settings') && (
+        {activeTab === 'orders' && (
+          <div className="bg-white rounded-xl border border-neutral-100 shadow-sm overflow-hidden">
+            <div className="p-8 border-b border-neutral-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-neutral-900">Quản lý đơn hàng</h3>
+              <p className="text-xs text-neutral-400 font-mono">Tổng cộng: {orders.length} Đơn hàng</p>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="text-[10px] text-neutral-400 uppercase tracking-widest border-b border-neutral-50 font-bold">
+                    <th className="px-8 py-4">Mã đơn</th>
+                    <th className="px-8 py-4">Khách hàng</th>
+                    <th className="px-8 py-4">Số điện thoại</th>
+                    <th className="px-8 py-4">Thanh toán</th>
+                    <th className="px-8 py-4">Trạng thái</th>
+                    <th className="px-8 py-4">Tổng tiền</th>
+                    <th className="px-8 py-4">Tác vụ</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {orders.map((order) => (
+                    <tr key={order.id} className="border-b border-neutral-50 hover:bg-neutral-50 transition-colors">
+                      <td className="px-8 py-4 font-mono font-bold text-neutral-900">{order.id}</td>
+                      <td className="px-8 py-4">
+                        <div>
+                          <p className="font-semibold text-neutral-900">{order.customerName}</p>
+                          <p className="text-[10px] text-neutral-400 font-mono">{order.email}</p>
+                        </div>
+                      </td>
+                      <td className="px-8 py-4 text-neutral-500 font-mono">{order.phone}</td>
+                      <td className="px-8 py-4 text-xs font-mono uppercase text-neutral-600">{order.paymentMethod}</td>
+                      <td className="px-8 py-4">
+                        <select 
+                          value={order.status}
+                          onChange={async (e) => {
+                            try {
+                              await dbUpdateOrderStatus(order.id, e.target.value as any);
+                              await loadAllData();
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className={`p-2 rounded text-[10px] font-bold uppercase cursor-pointer outline-none border border-neutral-200 outline-none ${
+                            order.status === 'completed' ? 'bg-green-50 text-green-600 border-green-200' :
+                            order.status === 'processing' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                            order.status === 'shipping' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' :
+                            order.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' :
+                            'bg-neutral-50 text-neutral-400'
+                          }`}
+                        >
+                          <option value="pending">Chờ xử lý</option>
+                          <option value="processing">Đang xử lý</option>
+                          <option value="shipping">Đang giao</option>
+                          <option value="completed">Hoàn thành</option>
+                          <option value="cancelled">Đã hủy</option>
+                        </select>
+                      </td>
+                      <td className="px-8 py-4 font-bold text-neutral-900">{formatCurrency(order.total)}</td>
+                      <td className="px-8 py-4">
+                        <button 
+                          onClick={() => setSelectedOrder(order)}
+                          className="text-xs uppercase tracking-widest font-bold border-b border-transparent hover:border-black hover:text-black py-1 text-neutral-500 transition-all font-sans"
+                        >
+                          Chi tiết
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
           <div className="py-32 text-center bg-white rounded-xl border border-neutral-100 shadow-sm border-dashed">
             <div className="w-20 h-20 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-6 text-neutral-300">
-               {activeTab === 'orders' ? <ShoppingBag size={40} /> : <Settings size={40} />}
+               <Settings size={40} />
             </div>
-            <h3 className="text-2xl font-light uppercase tracking-tight mb-2">Đang phát triển</h3>
-            <p className="text-neutral-500 text-sm">Tính năng này sẽ sớm ra mắt trong bản cập nhật tiếp theo.</p>
+            <h3 className="text-2xl font-light uppercase tracking-tight mb-2">Cài đặt hệ thống</h3>
+            <p className="text-neutral-500 text-sm">Cấu hình bảo mật nâng cao và thông tin cổng quản trị viên Seiko.</p>
           </div>
         )}
       </main>
@@ -857,6 +1041,68 @@ const Admin: React.FC = () => {
             onConfirm={handleConfirmDelete}
             onCancel={() => setConfirmDelete(null)}
           />
+        )}
+
+        {selectedOrder && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[110] flex items-center justify-center p-6"
+            onClick={() => setSelectedOrder(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-8 max-h-[95vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6 pb-4 border-b">
+                <div>
+                  <h3 className="text-lg font-bold uppercase tracking-widest text-neutral-900">Chi tiết đơn hàng</h3>
+                  <p className="text-xs text-neutral-400 font-mono">{selectedOrder.id}</p>
+                </div>
+                <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-neutral-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <h4 className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-2">Thông tin khách hàng</h4>
+                  <div className="bg-neutral-50 p-4 rounded-lg space-y-1 text-sm text-neutral-800">
+                    <p><b>Họ tên:</b> {selectedOrder.customerName}</p>
+                    <p><b>Email:</b> {selectedOrder.email}</p>
+                    <p><b>Số điện thoại:</b> {selectedOrder.phone}</p>
+                    <p><b>Địa chỉ:</b> {selectedOrder.address}, {selectedOrder.district}, {selectedOrder.city}</p>
+                    <p><b>Phương thức thanh toán:</b> {selectedOrder.paymentMethod === 'COD' ? 'Thanh toán trực tiếp khi nhận hàng (COD)' : 'Chuyển khoản trực tiếp NH'}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-2">Sản phẩm đã chọn</h4>
+                  <div className="divide-y border rounded-lg overflow-hidden bg-white">
+                    {selectedOrder.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-4 p-4 hover:bg-neutral-50">
+                        <img src={item.image} className="w-12 h-12 object-cover rounded" alt={item.name} />
+                        <div className="flex-1">
+                          <p className="font-semibold text-neutral-900 text-sm uppercase">{item.name}</p>
+                          <p className="text-xs text-neutral-500 font-mono">Số lượng: {item.quantity}</p>
+                        </div>
+                        <p className="font-bold text-neutral-900 text-sm">{item.price}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-4 border-t border-neutral-100">
+                  <span className="text-sm font-bold uppercase text-neutral-500">Tổng thanh toán:</span>
+                  <span className="text-xl font-bold text-neutral-900 font-mono">{formatCurrency(selectedOrder.total)}</span>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

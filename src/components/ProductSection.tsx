@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShoppingCart, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { products } from '../data/products';
+import { products as fallbackProducts, Product } from '../data/products';
 import { useCart } from '../context/CartContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { dbGetProducts } from '../lib/db';
 
 const ProductSection: React.FC = () => {
   const { addToCart } = useCart();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Config state
   const [config, setConfig] = useState({
@@ -18,18 +21,30 @@ const ProductSection: React.FC = () => {
   });
 
   useEffect(() => {
-    const fetchConfig = async () => {
+    const fetchData = async () => {
       try {
+        // Fetch config
         const docRef = doc(db, 'configs', 'homepage');
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setConfig(docSnap.data() as any);
         }
+
+        // Fetch products
+        const dbProds = await dbGetProducts();
+        if (dbProds && dbProds.length > 0) {
+          setProducts(dbProds);
+        } else {
+          setProducts(fallbackProducts);
+        }
       } catch (error) {
-        console.error("Error fetching homepage config:", error);
+        console.error("Error fetching homepage data:", error);
+        setProducts(fallbackProducts);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchConfig();
+    fetchData();
   }, []);
 
   const filteredProducts = products.slice(0, config.productLimit);
@@ -80,8 +95,15 @@ const ProductSection: React.FC = () => {
           </motion.div>
         </div>
 
-        <div className={`grid grid-cols-1 md:grid-cols-2 ${getGridColsClass()} gap-10`}>
-          {products.map((product, index) => (
+        {isLoading ? (
+          <div className="py-24 text-center">
+            <div className="w-8 h-8 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-neutral-500 text-xs uppercase tracking-widest font-mono">Đang tải sản phẩm...</p>
+          </div>
+        ) : (
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${getGridColsClass()} gap-10`}>
+            {filteredProducts.map((product, index) => (
+
             <motion.div
               key={product.id}
               initial={{ opacity: 0, y: 30 }}
@@ -125,7 +147,8 @@ const ProductSection: React.FC = () => {
               </div>
             </motion.div>
           ))}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -1,17 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Quote, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { dbGetFeedbacks, FeedbackItem } from '../lib/db';
 
-interface FeedbackItem {
-  id: number;
-  content: string;
-  author: string;
-  location: string;
-  rating: number;
-  model: string;
-}
-
-const feedbacks: FeedbackItem[] = [
+const fallbackFeedbacks: FeedbackItem[] = [
   {
     id: 1,
     content: "Chiếc Seiko Presage tôi mua thực sự vượt xa mong đợi. Độ hoàn thiện tuyệt vời, kim xanh trên nền dial trắng gốm tạo nên một vẻ đẹp rất tinh tế. Tư vấn tận tình, đóng gói kỹ lưỡng.",
@@ -39,8 +31,23 @@ const feedbacks: FeedbackItem[] = [
 ];
 
 const Feedback: React.FC = () => {
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>(fallbackFeedbacks);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const list = await dbGetFeedbacks();
+        if (list && list.length > 0) {
+          setFeedbacks(list);
+        }
+      } catch (err) {
+        console.error("Error loading feedbacks:", err);
+      }
+    };
+    loadData();
+  }, []);
 
   const slideVariants = {
     enter: (direction: number) => ({
@@ -60,19 +67,24 @@ const Feedback: React.FC = () => {
   };
 
   const nextSlide = () => {
+    if (feedbacks.length === 0) return;
     setDirection(1);
     setCurrentIndex((prev) => (prev + 1) % feedbacks.length);
   };
 
   const prevSlide = () => {
+    if (feedbacks.length === 0) return;
     setDirection(-1);
     setCurrentIndex((prev) => (prev - 1 + feedbacks.length) % feedbacks.length);
   };
 
   useEffect(() => {
+    if (feedbacks.length <= 1) return;
     const timer = setInterval(nextSlide, 8000);
     return () => clearInterval(timer);
-  }, []);
+  }, [feedbacks]);
+
+  if (feedbacks.length === 0) return null;
 
   return (
     <section className="bg-black py-32 px-8 md:px-16 lg:px-24 overflow-hidden relative">

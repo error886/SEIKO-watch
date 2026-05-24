@@ -13,6 +13,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { CartProvider } from './context/CartContext';
 import { AuthProvider } from './context/AuthContext';
 import { useEffect } from 'react';
+import { initializeDatabase } from './lib/db';
 
 // Scroll to top component
 const ScrollToTop = () => {
@@ -34,7 +35,10 @@ const ScrollToTop = () => {
 };
 
 export default function App() {
-  <title>hCuongg86</title>
+  useEffect(() => {
+    initializeDatabase();
+  }, []);
+
   return (
     <Router>
       <AuthProvider>
