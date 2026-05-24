@@ -29,17 +29,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(firebaseUser);
       
       if (firebaseUser) {
+        const adminEmail = 'cuong.soft86@gmail.com';
+        const userEmailNormalized = firebaseUser.email?.toLowerCase();
+        const isTargetAdmin = userEmailNormalized === adminEmail;
+
         // Check user role in Firestore
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDoc = await getDoc(userDocRef);
         
         if (userDoc.exists()) {
-          setIsAdmin(userDoc.data().role === 'admin');
+          const currentRole = userDoc.data()?.role;
+          if (isTargetAdmin && currentRole !== 'admin') {
+            await setDoc(userDocRef, { role: 'admin' }, { merge: true });
+            setIsAdmin(true);
+          } else {
+            setIsAdmin(currentRole === 'admin');
+          }
         } else {
           // If first time login, check if it's the admin email from metadata or first user
           // For this app, let's make the user's email from metadata the admin
-          const adminEmail = 'cuong.soft86@gmail.com'; 
-          const role = firebaseUser.email === adminEmail ? 'admin' : 'customer';
+          const role = isTargetAdmin ? 'admin' : 'customer';
           
           await setDoc(userDocRef, {
             email: firebaseUser.email,

@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
+    <script>
+      // Avoid "Cannot set property fetch of #<Window> which has only a getter" in sandboxed environments
+      (function() {
+        try {
+          var targetGlobal = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this);
+          var originalFetch = targetGlobal.fetch;
+          var customFetch = originalFetch;
+          Object.defineProperty(targetGlobal, 'fetch', {
+            get: function() {
+              return customFetch;
+            },
+            set: function(val) {
+              customFetch = val;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          console.warn("Could not polyfill/redefine fetch property:", e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

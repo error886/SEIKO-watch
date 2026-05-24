@@ -307,6 +307,10 @@ import {
   Banner
 } from '../lib/db';
 
+const formatCurrency = (val: number) => {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+};
+
 const Admin: React.FC = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -505,10 +509,6 @@ const Admin: React.FC = () => {
   ];
 
   const COLORS = ['#000000', '#404040', '#737373', '#a3a3a3'];
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-  };
 
 
   return (
